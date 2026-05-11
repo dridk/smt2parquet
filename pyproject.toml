@@ -1,0 +1,11 @@
+[project]
+name = "smt2parquet"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "polars>=1.40.1",
+    "pyarrow>=24.0.0",
+    "rdflib>=7.6.0",
+]
