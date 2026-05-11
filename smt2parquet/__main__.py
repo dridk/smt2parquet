@@ -15,6 +15,11 @@ TERMINOLOGIES: dict[str, dict[str, str]] = {
         "rdf_glob": "rdf/terminologie-cim-10-*.rdf",
         "out_dir": "parquet",
     },
+    "ccam": {
+        "module": "smt2parquet.ccam",
+        "rdf_glob": "rdf/terminologie-ccam-*.rdf",
+        "out_dir": "parquet",
+    },
 }
 
 

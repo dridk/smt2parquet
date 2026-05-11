@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from pathlib import Path
@@ -12,8 +11,6 @@ import pyarrow.parquet as pq
 import rdflib
 
 log = logging.getLogger(__name__)
-
-_VERSION_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def load_graph(path: Path) -> rdflib.Graph:
@@ -31,10 +28,8 @@ def extract_version(rdf_path: Path, prefix: str) -> str:
             f"RDF filename {stem!r} does not start with prefix {prefix!r}"
         )
     version = stem[len(prefix):]
-    if not _VERSION_RE.match(version):
-        raise ValueError(
-            f"Extracted version {version!r} is not in YYYY-MM-DD format"
-        )
+    if not version:
+        raise ValueError(f"Empty version extracted from {stem!r}")
     return version
 
 
