@@ -20,6 +20,7 @@ def _resolve_rdf_path(
     terminology: TerminologyType,
     version: Optional[str],
     rdf_dir: Path,
+    allow_fallback: bool = True,
 ) -> tuple[Path, str]:
     """Find the RDF file matching the terminology and optional version.
     
@@ -27,6 +28,7 @@ def _resolve_rdf_path(
         terminology: Either 'cim10' or 'ccam'
         version: Optional version string (e.g., '2025-01-01' for CIM10, 'v82.00' for CCAM)
         rdf_dir: Directory to search for RDF files (must exist and be resolved)
+        allow_fallback: If True, fallback to ./rdf/ if no files found in rdf_dir
         
     Returns:
         Tuple of (Path to the matching RDF file, version string extracted)
@@ -49,9 +51,10 @@ def _resolve_rdf_path(
     matches = sorted(rdf_dir.glob(filename_pattern))
     
     # Fallback: try in current directory's rdf/ subdirectory for backward compatibility
-    if not matches:
+    if not matches and allow_fallback:
         default_rdf_dir = Path("rdf")
         if default_rdf_dir.exists():
+            log.debug("Aucun fichier trouvé dans %s, utilisation du fallback: %s", rdf_dir, default_rdf_dir)
             matches = sorted(default_rdf_dir.glob(filename_pattern))
     
     if not matches:
@@ -155,6 +158,7 @@ def cim10(
     rdf_dir: Path | str = "rdf",
     out_dir: Path | str = "parquet",
     force: bool = False,
+    no_fallback: bool = False,
 ) -> pl.DataFrame:
     """Charge la terminologie CIM10 depuis un dossier RDF.
     
@@ -166,13 +170,15 @@ def cim10(
         out_dir: Dossier pour les fichiers Parquet générés. Créé automatiquement.
             Par défaut utilise la valeur configurée dans config.TERMINOLOGIES.
         force: Si True, regénère le Parquet même s'il existe déjà.
+        no_fallback: Si True, désactive le fallback vers ./rdf/ quand aucun fichier
+            n'est trouvé dans rdf_dir. Permet de détecter les erreurs de chemin.
         
     Returns:
         DataFrame Polars avec tous les concepts CIM10.
         
     Raises:
-        FileNotFoundError: Si aucun fichier RDF CIM10 n'est trouvé dans rdf_dir,
-            ou si rdf_dir n'existe pas.
+        FileNotFoundError: Si aucun fichier RDF CIM10 n'est trouvé dans rdf_dir
+            (ou dans ./rdf/ si no_fallback=False), ou si rdf_dir n'existe pas.
         ValueError: Si plusieurs fichiers sont trouvés et que version n'est pas spécifié,
             ou si la terminologie est inconnue.
         
@@ -181,6 +187,7 @@ def cim10(
         >>> df = cim10()  # Cherche dans ./rdf/
         >>> df = cim10(rdf_dir="/chemin/vers/rdf/")
         >>> df = cim10(version="2025-01-01", rdf_dir="~/data/smt/")
+        >>> df = cim10(rdf_dir="/dossier/inexistant", no_fallback=True)  # Lève FileNotFoundError
     """
     # Normalize and resolve paths
     rdf_dir = Path(rdf_dir).expanduser().resolve()
@@ -195,7 +202,7 @@ def cim10(
         raise FileNotFoundError(f"Le dossier RDF n'existe pas : {rdf_dir!r}")
     
     log.info("Chargement CIM10 depuis %s", rdf_dir)
-    rdf_path, resolved_version = _resolve_rdf_path("cim10", version, rdf_dir)
+    rdf_path, resolved_version = _resolve_rdf_path("cim10", version, rdf_dir, allow_fallback=not no_fallback)
     return _ensure_parquet("cim10", rdf_path, out_dir, force)
 
 
@@ -204,6 +211,7 @@ def ccam(
     rdf_dir: Path | str = "rdf",
     out_dir: Path | str = "parquet",
     force: bool = False,
+    no_fallback: bool = False,
 ) -> pl.DataFrame:
     """Charge la terminologie CCAM depuis un dossier RDF.
     
@@ -215,13 +223,15 @@ def ccam(
         out_dir: Dossier pour les fichiers Parquet générés. Créé automatiquement.
             Par défaut utilise la valeur configurée dans config.TERMINOLOGIES.
         force: Si True, regénère le Parquet même s'il existe déjà.
+        no_fallback: Si True, désactive le fallback vers ./rdf/ quand aucun fichier
+            n'est trouvé dans rdf_dir. Permet de détecter les erreurs de chemin.
         
     Returns:
         DataFrame Polars avec tous les concepts CCAM.
         
     Raises:
-        FileNotFoundError: Si aucun fichier RDF CCAM n'est trouvé dans rdf_dir,
-            ou si rdf_dir n'existe pas.
+        FileNotFoundError: Si aucun fichier RDF CCAM n'est trouvé dans rdf_dir
+            (ou dans ./rdf/ si no_fallback=False), ou si rdf_dir n'existe pas.
         ValueError: Si plusieurs fichiers sont trouvés et que version n'est pas spécifié,
             ou si la terminologie est inconnue.
         
@@ -230,6 +240,7 @@ def ccam(
         >>> df = ccam()  # Cherche dans ./rdf/
         >>> df = ccam(rdf_dir="/chemin/vers/rdf/")
         >>> df = ccam(version="v82.00", rdf_dir="~/data/ccam/")
+        >>> df = ccam(rdf_dir="/dossier/inexistant", no_fallback=True)  # Lève FileNotFoundError
     """
     # Normalize and resolve paths
     rdf_dir = Path(rdf_dir).expanduser().resolve()
@@ -244,5 +255,5 @@ def ccam(
         raise FileNotFoundError(f"Le dossier RDF n'existe pas : {rdf_dir!r}")
     
     log.info("Chargement CCAM depuis %s", rdf_dir)
-    rdf_path, resolved_version = _resolve_rdf_path("ccam", version, rdf_dir)
+    rdf_path, resolved_version = _resolve_rdf_path("ccam", version, rdf_dir, allow_fallback=not no_fallback)
     return _ensure_parquet("ccam", rdf_path, out_dir, force)
