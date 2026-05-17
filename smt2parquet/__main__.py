@@ -7,20 +7,9 @@ import logging
 import sys
 from pathlib import Path
 
-from smt2parquet import core
+from smt2parquet import config, core
 
-TERMINOLOGIES: dict[str, dict[str, str]] = {
-    "cim10": {
-        "module": "smt2parquet.cim10",
-        "rdf_glob": "rdf/terminologie-cim-10-*.rdf",
-        "out_dir": "parquet",
-    },
-    "ccam": {
-        "module": "smt2parquet.ccam",
-        "rdf_glob": "rdf/terminologie-ccam-*.rdf",
-        "out_dir": "parquet",
-    },
-}
+TERMINOLOGIES = config.TERMINOLOGIES
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -35,13 +24,16 @@ def main(argv: list[str] | None = None) -> int:
 
     spec = TERMINOLOGIES[args.terminology]
 
-    rdf_matches = sorted(Path().glob(spec["rdf_glob"]))
+    # Search for RDF files in the rdf/ subdirectory
+    rdf_dir = Path("rdf")
+    filename_pattern = spec["rdf_glob"].split("/")[-1]  # Extract pattern without directory
+    rdf_matches = sorted(rdf_dir.glob(filename_pattern))
     if not rdf_matches:
-        print(f"No RDF file matching {spec['rdf_glob']!r}", file=sys.stderr)
+        print(f"No RDF file matching {filename_pattern!r} in {rdf_dir!r}", file=sys.stderr)
         return 1
     if len(rdf_matches) > 1:
         print(
-            f"Multiple RDF files match {spec['rdf_glob']!r}: "
+            f"Multiple RDF files match {filename_pattern!r}: "
             f"{[str(p) for p in rdf_matches]}",
             file=sys.stderr,
         )
