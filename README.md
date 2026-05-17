@@ -1,5 +1,10 @@
 # smt2parquet
 
+[![PyPI version](https://img.shields.io/pypi/v/smt2parquet.svg?style=flat-square)](https://pypi.org/project/smt2parquet/)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg?style=flat-square)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![Code Style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg?style=flat-square)](https://github.com/astral-sh/ruff)
+
 Convertit les terminologies médicales du portail [**SMT**](https://smt.esante.gouv.fr/) (Serveur Multi-Terminologies, eSanté France) — fichiers RDF — vers du **Parquet** en préservant la hiérarchie via le [**modèle d'imbrication d'ensembles**](https://fr.wikipedia.org/wiki/Imbrication_d%27ensembles) (*nested set*).
 
 Le résultat : un Parquet par terminologie avec, pour chaque concept, les colonnes `code`, `label`, `path`, et le triplet `left`/`right`/`depth` qui permettent de requêter ancêtres et descendants par une simple comparaison d'intervalles.
@@ -35,13 +40,62 @@ Récupérez les fichiers RDF depuis le portail [SMT](https://smt.esante.gouv.fr/
 
 ## Installation
 
+### Avec pip (quand publié sur PyPI)
+```bash
+pip install smt2parquet
+```
+
+### En développement
 ```bash
 uv sync
 ```
 
 Python ≥ 3.13. Dépendances : `polars`, `rdflib`, `pyarrow`.
 
+---
+
 ## Utilisation
+
+### 🐍 API Python (recommandée)
+
+La manière la plus simple de charger les terminologies :
+
+```python
+from smt2parquet import cim10, ccam
+
+# Chargement automatique (cherche dans ./rdf/)
+df = cim10()
+
+# Avec un dossier RDF personnalisé
+df = cim10(rdf_dir="/chemin/vers/mes/fichiers/rdf/")
+
+# Version spécifique
+df = cim10(version="2025-01-01", rdf_dir="~/data/smt/")
+
+# Forcer la regénération du Parquet
+df = cim10(force=True)
+
+# Dossier de sortie personnalisé
+df = cim10(out_dir="/tmp/mes_parquets/")
+```
+
+**Exemple complet :**
+```python
+from smt2parquet import cim10
+
+# Charger CIM10
+df = cim10()
+
+# Trouver tous les codes du chapitre I (maladies infectieuses)
+infectious = df.filter(df["path"].str.startswith("I/"))
+print(infectious["code"].to_list())
+
+# Trouver les codes avec des exclusions
+with_exclusions = df.filter(df["exclusion_codes"].list.len() > 0)
+print(with_exclusions["code", "exclusion_codes"].head())
+```
+
+### 💻 CLI (alternative)
 
 ```bash
 uv run python -m smt2parquet cim10
@@ -49,6 +103,14 @@ uv run python -m smt2parquet ccam
 ```
 
 Le CLI résout le glob `rdf/terminologie-<nom>-*.rdf`, extrait la version du nom de fichier, et écrit `parquet/<nom>-<version>.parquet`.
+
+**Options :**
+```bash
+# Spécifier le dossier RDF (pas encore supporté en CLI, utiliser l'API Python)
+# Forcer la regénération (pas encore supporté en CLI, utiliser l'API Python)
+```
+
+> **Recommandation :** Utilisez l'API Python pour plus de flexibilité.
 
 ## Schéma de sortie
 
@@ -196,7 +258,13 @@ print({k.decode(): v.decode() for k, v in md.items() if not k.startswith(b"ARROW
    - `BASE_URI`, `RDF_FILENAME_PREFIX`, `TERMINOLOGY_NAME`,
    - `EDGES_QUERY` et `ATTRS_QUERY` (SPARQL),
    - `convert(rdf_path, out_path)`.
-2. Ajouter une entrée dans `TERMINOLOGIES` de `smt2parquet/__main__.py`.
+2. Ajouter une entrée dans `TERMINOLOGIES` de `smt2parquet/config.py` avec :
+   - `module`: nom du module Python (ex: `"smt2parquet.cim10"`)
+   - `rdf_glob`: pattern de fichier (ex: `"terminologie-cim-10-*.rdf"`)
+   - `out_dir`: dossier de sortie (ex: `"parquet"`)
+   - `filename_prefix`: préfixe du fichier (ex: `"terminologie-cim-10-"`)
+
+3. L'API Python (`api.py`) utilisera automatiquement la nouvelle terminologie.
 
 `smt2parquet/core.py` ne devrait pas avoir à bouger. Voir `smt2parquet/cim10.py` et `smt2parquet/ccam.py` pour deux exemples — la CCAM montre comment intégrer des concepts liés (`topographie`, `type_acte`…) via `OPTIONAL { ?concept ccam:topographie ?x . ?x rdfs:label ?topographie }`.
 
