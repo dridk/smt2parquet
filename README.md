@@ -4,6 +4,24 @@ Convertit les terminologies médicales du portail [**SMT**](https://smt.esante.g
 
 Le résultat : un Parquet par terminologie avec, pour chaque concept, les colonnes `code`, `label`, `path`, et le triplet `left`/`right`/`depth` qui permettent de requêter ancêtres et descendants par une simple comparaison d'intervalles.
 
+---
+
+## ⚠️ Licence des données SMT
+
+> **⚠️ IMPORTANT** : Les fichiers RDF source fournis par le portail SMT sont protégés par la licence **[Creative Commons Attribution - Pas d'Utilisation Commerciale - Pas de Modification 3.0 IGO](https://creativecommons.org/licenses/by-nc-nd/3.0/igo/deed.fr).
+
+- **BY (Attribution)** : Vous devez citer la source (SMT, eSanté France).
+- **NC (NonCommercial)** : Toute utilisation commerciale est interdite.
+- **ND (NoDerivatives)** : Toute modification des données est interdite.
+
+⚠️ **Vos responsabilités** :
+- Vous devez **télécharger vous-même** les fichiers RDF depuis [smt.esante.gouv.fr](https://smt.esante.gouv.fr/) et les placer dans `rdf/`.
+- Les fichiers Parquet générés par ce tool sont des **œuvres dérivées** des données SMT.
+- **L'utilisation commerciale des données ou des fichiers Parquet dérivés est interdite** sans autorisation explicite.
+- **La redistribution des fichiers Parquet est interdite** sans autorisation explicite (clause ND).
+
+Le **code** de ce projet est sous licence **MIT** (voir en bas de page).
+
 ## Terminologies supportées
 
 | Nom | Fichier RDF attendu | Sortie |
@@ -49,7 +67,7 @@ Colonnes communes à toutes les terminologies :
 
 Colonnes spécifiques :
 
-- **CIM10** : `type` (`chapter` / `block` / `category`)
+- **CIM10** : `type` (`chapter` / `block` / `category`), `exclusion_note`, `exclusion_codes`
 - **CCAM** : `exclusion_note`, `definition`, `topographie`, `type_acte`, `mode_acces`, `action`
 
 Les nœuds avec plusieurs parents (DAG) sont **dupliqués** : chaque occurrence sous un parent différent reçoit son propre `left`/`right`/`depth`/`path`.
