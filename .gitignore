@@ -147,6 +147,12 @@ activemq-data/
 # SageMath parsed files
 *.sage.py
 
+# RDF files
+*.rdf
+
+# Parquet files
+*.parquet
+
 # Environments
 .env
 .envrc
