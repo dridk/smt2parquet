@@ -20,6 +20,11 @@ TERMINOLOGIES: dict[str, dict[str, str]] = {
         "rdf_glob": "rdf/terminologie-ccam-*.rdf",
         "out_dir": "parquet",
     },
+    "adicap": {
+        "module": "smt2parquet.adicap",
+        "rdf_glob": "rdf/terminologie-adicap-*.rdf",
+        "out_dir": "parquet",
+    },
 }
 
 
