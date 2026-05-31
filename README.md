@@ -2,7 +2,7 @@
 
 Convertit les terminologies médicales du portail [**SMT**](https://smt.esante.gouv.fr/) (Serveur Multi-Terminologies, eSanté France) — fichiers RDF — vers du **Parquet** en préservant la hiérarchie via le [**modèle d'imbrication d'ensembles**](https://fr.wikipedia.org/wiki/Imbrication_d%27ensembles) (*nested set*).
 
-Le résultat : un Parquet par terminologie avec, pour chaque concept, les colonnes `code`, `label`, `path`, et le triplet `left`/`right`/`depth` qui permettent de requêter ancêtres et descendants par une simple comparaison d'intervalles.
+Le résultat : un Parquet par terminologie avec, pour chaque concept, les colonnes `code`, `label`, `path`, et le triplet `lft`/`rgt`/`depth` qui permettent de requêter ancêtres et descendants par une simple comparaison d'intervalles.
 
 ## Terminologies supportées
 
@@ -41,8 +41,8 @@ Colonnes communes à toutes les terminologies :
 | `code` | `str` | Code du concept (`skos:notation`) |
 | `label` | `str` | Libellé (`rdfs:label`) |
 | `depth` | `i64` | Profondeur dans l'arbre (0 = racine réelle) |
-| `left` | `i64` | Borne gauche du nested set |
-| `right` | `i64` | Borne droite du nested set |
+| `lft` | `i64` | Borne gauche du nested set |
+| `rgt` | `i64` | Borne droite du nested set |
 | `path` | `str` | Chaîne des codes des ancêtres, ex. `I/A00-A09/A00/A00.0` |
 | `synonymes` | `list[str]` | `skos:altLabel` dédupliqués |
 | `inclusion_note` | `str?` | `xkos:inclusionNote` |
@@ -52,15 +52,15 @@ Colonnes spécifiques :
 - **CIM10** : `type` (`chapter` / `block` / `category`)
 - **CCAM** : `exclusion_note`, `definition`, `topographie`, `type_acte`, `mode_acces`, `action`
 
-Les nœuds avec plusieurs parents (DAG) sont **dupliqués** : chaque occurrence sous un parent différent reçoit son propre `left`/`right`/`depth`/`path`.
+Les nœuds avec plusieurs parents (DAG) sont **dupliqués** : chaque occurrence sous un parent différent reçoit son propre `lft`/`rgt`/`depth`/`path`.
 
 ## Pourquoi nested set ?
 
-Avec `parent_code` ou un `path` listé, retrouver tous les descendants d'un nœud demande une jointure récursive (CTE). Avec `left`/`right`, un simple `BETWEEN` suffit, et c'est indexable.
+Avec `parent_code` ou un `path` listé, retrouver tous les descendants d'un nœud demande une jointure récursive (CTE). Avec `lft`/`rgt`, un simple `BETWEEN` suffit, et c'est indexable.
 
 ```
-Pour tout nœud P, ses descendants sont les lignes où left ∈ ]P.left, P.right[
-                  ses ancêtres   sont les lignes où left < P.left ET right > P.right
+Pour tout nœud P, ses descendants sont les lignes où lft ∈ ]P.lft, P.rgt[
+                  ses ancêtres   sont les lignes où lft < P.lft ET rgt > P.rgt
 ```
 
 ## Exemples avec DuckDB
@@ -71,27 +71,27 @@ Pour tout nœud P, ses descendants sont les lignes où left ∈ ]P.left, P.right
 
 ```sql
 -- Affiche les chapitres CIM10 (depth = 0)
-SELECT code, label, "left", "right"
+SELECT code, label, lft, rgt
 FROM 'parquet/cim10-2025-01-01.parquet'
 WHERE depth = 0
-ORDER BY "left";
+ORDER BY lft;
 ```
 
-> Les colonnes `left` et `right` sont des mots-clés SQL — DuckDB les accepte entre guillemets doubles.
+> Les colonnes s'appellent `lft`/`rgt` (convention nested set, façon Celko) plutôt que `left`/`right` pour éviter la collision avec les mots-clés SQL `LEFT`/`RIGHT` — pas besoin de guillemets.
 
 ### Tous les descendants d'un chapitre
 
 ```sql
 -- Toutes les lignes sous le chapitre I "Certaines maladies infectieuses et parasitaires"
 WITH chapitre AS (
-    SELECT "left" AS l, "right" AS r
+    SELECT lft AS l, rgt AS r
     FROM 'parquet/cim10-2025-01-01.parquet'
     WHERE code = 'I'
 )
 SELECT code, label, depth
 FROM 'parquet/cim10-2025-01-01.parquet', chapitre
-WHERE "left" BETWEEN chapitre.l AND chapitre.r
-ORDER BY "left";
+WHERE lft BETWEEN chapitre.l AND chapitre.r
+ORDER BY lft;
 ```
 
 ### Tous les ancêtres d'un code
@@ -99,13 +99,13 @@ ORDER BY "left";
 ```sql
 -- Remonter la hiérarchie depuis le code A00.0
 WITH cible AS (
-    SELECT "left" AS l, "right" AS r
+    SELECT lft AS l, rgt AS r
     FROM 'parquet/cim10-2025-01-01.parquet'
     WHERE code = 'A00.0'
 )
 SELECT code, label, depth
 FROM 'parquet/cim10-2025-01-01.parquet', cible
-WHERE cible.l BETWEEN "left" AND "right"
+WHERE cible.l BETWEEN lft AND rgt
 ORDER BY depth;
 ```
 
@@ -118,7 +118,7 @@ SELECT
     COUNT(*) - 1     AS nb_descendants  -- on retire le chapitre lui-même
 FROM 'parquet/cim10-2025-01-01.parquet' AS chap
 JOIN 'parquet/cim10-2025-01-01.parquet' AS sub
-  ON sub."left" BETWEEN chap."left" AND chap."right"
+  ON sub.lft BETWEEN chap.lft AND chap.rgt
 WHERE chap.depth = 0
 GROUP BY chap.code, chap.label
 ORDER BY chap.code;
@@ -150,11 +150,11 @@ con.execute("""
 
 # Descendants d'un nœud, classiquement
 descendants = con.execute("""
-    WITH t AS (SELECT "left", "right" FROM cim10 WHERE code = 'A00')
+    WITH t AS (SELECT lft, rgt FROM cim10 WHERE code = 'A00')
     SELECT c.code, c.label, c.depth
     FROM cim10 c, t
-    WHERE c."left" BETWEEN t."left" AND t."right"
-    ORDER BY c."left"
+    WHERE c.lft BETWEEN t.lft AND t.rgt
+    ORDER BY c.lft
 """).pl()  # → DataFrame Polars
 
 print(descendants)

@@ -9,3 +9,13 @@ dependencies = [
     "pyarrow>=24.0.0",
     "rdflib>=7.6.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "duckdb>=1.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

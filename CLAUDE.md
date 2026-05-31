@@ -1,13 +1,13 @@
 # smt2parquet
 
-Convertit les terminologies médicales du portail **SMT** (https://smt.esante.gouv.fr/) — fichiers RDF — vers du **Parquet** en préservant la hiérarchie via le **modèle d'imbrication d'ensembles** (nested set : colonnes `left`, `right`, `depth`, `path`).
+Convertit les terminologies médicales du portail **SMT** (https://smt.esante.gouv.fr/) — fichiers RDF — vers du **Parquet** en préservant la hiérarchie via le **modèle d'imbrication d'ensembles** (nested set : colonnes `lft`, `rgt`, `depth`, `path`).
 
 ## Pourquoi nested set
 
 Les requêtes ancêtres/descendants deviennent triviales et indexables :
 ```sql
 -- tous les descendants d'un nœud P
-SELECT * FROM t WHERE left BETWEEN P.left AND P.right
+SELECT * FROM t WHERE lft BETWEEN P.lft AND P.rgt
 ```
 C'est plus efficace qu'un simple `parent_code` (récursion nécessaire) ou qu'un `path` listé (jointures coûteuses).
 
@@ -30,9 +30,9 @@ parquet/               # Sorties générées (non commités)
 - `extract_version(rdf_path, prefix)` — extrait `YYYY-MM-DD` du nom de fichier (ex. `terminologie-cim-10-2025-01-01.rdf` → `2025-01-01`).
 - `dataframe_from_sparql(graph, sparql)` — exécute une requête SPARQL et retourne un `pl.DataFrame` (colonnes en lowercase, `None` polars proprement, pas `"None"` chaîne).
 - `build_nested_set(edges, root, code_of, *, include_root=False, path_sep="/")` — DFS récursif qui :
-  - assigne `left`/`right` via un compteur partagé (incrémenté à l'entrée *et* à la sortie),
+  - assigne `lft`/`rgt` via un compteur partagé (incrémenté à l'entrée *et* à la sortie),
   - calcule `path` via une pile de codes maintenue le long du parcours,
-  - **duplique les nœuds multi-parents** (un nœud avec N parents apparaît N fois avec son sous-arbre, chaque occurrence ayant son propre `left/right/depth/path`),
+  - **duplique les nœuds multi-parents** (un nœud avec N parents apparaît N fois avec son sous-arbre, chaque occurrence ayant son propre `lft/rgt/depth/path`),
   - détecte les cycles (`ValueError`),
   - exclut par défaut la racine virtuelle (cas CIM10 où la racine `BASE_URI` n'est pas une entité réelle).
 - `write_parquet_with_metadata(df, out_path, metadata)` — écrit le Parquet via `pyarrow` en injectant `metadata` dans les key-value metadata du footer.
@@ -76,8 +76,8 @@ Le CLI :
 | `label` | str | `rdfs:label` |
 | `type` | str | `dc:type` (ex. `chapter`/`block`/`category` pour CIM10) |
 | `depth` | i64 | calculé par DFS, racines réelles à `0` |
-| `left` | i64 | nested set |
-| `right` | i64 | nested set |
+| `lft` | i64 | nested set (nom court façon Celko, pas de collision SQL) |
+| `rgt` | i64 | nested set (nom court façon Celko, pas de collision SQL) |
 | `path` | str | chaîne des codes des ancêtres jusqu'au nœud, séparés par `/` (ex. `I/A00-A09/A00/A00.0`) |
 | `synonymes` | list[str] | `skos:altLabel` agrégés, dédupliqués |
 | `inclusion_note` | str | `xkos:inclusionNote` |
@@ -86,7 +86,7 @@ Colonnes spécifiques possibles selon la terminologie :
 - **CCAM** : `topographie`, `type_acte`, `mode_acces`, `action` — labels de concepts liés via `ccam:topographie [ rdfs:label ?x ]` etc.
 - **ADICAP** : `dictionary_code` (`adicap:dictionaryCode`, l'axe D1–D8L), `anatomy_code` + `anatomy_label` (`adicap:anatomy` pointe vers un autre concept ADICAP dont on résout `skos:notation` + `rdfs:label`). Pas de `type` (absence de `dc:type`), ni `synonymes`/`inclusion_note` (absence de `skos:altLabel`/`xkos:*`).
 
-Le DataFrame est trié par `left` (ordre DFS préfixe naturel).
+Le DataFrame est trié par `lft` (ordre DFS préfixe naturel).
 
 ## Métadonnées Parquet (footer key-value)
 
