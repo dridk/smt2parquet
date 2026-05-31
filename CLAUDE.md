@@ -19,7 +19,8 @@ smt2parquet/
 ├── core.py            # Helpers génériques réutilisables
 ├── cim10.py           # Une terminologie = un fichier Python
 ├── ccam.py
-└── adicap.py
+├── adicap.py
+└── atc.py
 rdf/                   # Fichiers RDF source (non commités, ~85 Mo)
 parquet/               # Sorties générées (non commités)
 ```
@@ -98,6 +99,7 @@ Le **contenu** est choisi par module (chaque `convert()` passe ses colonnes à
 - **CIM10** : `label`, `synonymes`.
 - **CCAM** : `label`, `synonymes`, `topographie`, `type_acte`, `mode_acces`, `action`.
 - **ADICAP** : `label`, `anatomy_label`.
+- **ATC** : `label`.
 
 Les codes (`code`, `dictionary_code`, `anatomy_code`) et les notes longues
 (`inclusion_note`, `exclusion_note`, `definition`) en sont volontairement exclus.
@@ -105,6 +107,7 @@ Les codes (`code`, `dictionary_code`, `anatomy_code`) et les notes longues
 Colonnes spécifiques possibles selon la terminologie :
 - **CCAM** : `topographie`, `type_acte`, `mode_acces`, `action` — labels de concepts liés via `ccam:topographie [ rdfs:label ?x ]` etc.
 - **ADICAP** : `dictionary_code` (`adicap:dictionaryCode`, l'axe D1–D8L), `anatomy_code` + `anatomy_label` (`adicap:anatomy` pointe vers un autre concept ADICAP dont on résout `skos:notation` + `rdfs:label`). Pas de `type` (absence de `dc:type`), ni `synonymes`/`inclusion_note` (absence de `skos:altLabel`/`xkos:*`).
+- **ATC** : `type` = niveau ATC `1`–`5` (`dc:type`) ; `status` = `active`/`inactive` (`adms:status`). Pas de `synonymes` ni de notes (absence de `skos:altLabel`/`xkos:*`). Les nœuds ombrelles (`ATC` + conteneurs « Concept retirés ») ont `type`/`status` nuls.
 
 Le DataFrame est trié par `lft` (ordre DFS préfixe naturel).
 
@@ -147,6 +150,8 @@ Aucune modification de `core.py` ne devrait être nécessaire — si c'est le ca
 - **Namespaces SMT** : la CIM10 utilise `xkos:inclusionNote` et **pas** `atih:inclusionNote`. Toujours vérifier les préfixes réels dans le RDF source (`grep -oE '<[a-z-]+:[a-zA-Z]+' file.rdf | sort -u`).
 - **Racine virtuelle** : dans CIM10, les chapitres ont `<rdfs:subClassOf rdf:resource=""/>` qui résout à `xml:base = http://data.esante.gouv.fr/atih/cim10`. C'est la racine — pas une entité réelle, donc `include_root=False` (défaut) la masque en sortie.
 - **Racine réelle (ADICAP)** : ADICAP a une racine org *réelle* `https://data.esante.gouv.fr/adicap/ADICAP` (`subClassOf owl:Thing`). On la prend comme `BASE_URI` avec `include_root=False` : le DFS part de ses enfants → les 9 dictionnaires (D1–D8 + D8L) sont à `depth 0`, et le nœud `ADICAP` est masqué (même effet que la racine virtuelle CIM10). L'arête `ADICAP subClassOf owl:Thing` est inoffensive (owl:Thing jamais visité). 9 682 lignes en sortie (= 9 683 concepts notés − racine).
+- **Double racine (ATC)** : le RDF ATC a *deux* arbres sous `owl:Thing` — `.../whocc/atc/ATC` (la classification vivante) et `.../whocc/atc/Concept_retirés` (arbre administratif des 53 concepts retirés, rangés par année). Pour inclure les deux, `BASE_URI = owl:Thing` (la racine virtuelle, `include_root=False`) : les deux nœuds ombrelles passent à `depth 0` et toute la hiérarchie ATC descend d'un niveau (les 14 groupes de niveau 1 sont à `depth 1`, d'où `depth ≈ dc:type`). 7 055 lignes (tous les nœuds notés). Conséquence : l'`ATTRS_QUERY` rend `skos:notation` **requise** (et label/type/status optionnels) pour que les ombrelles — sans label fr ni `dc:type` — gardent un `code` et donc un `path` propre.
+- **Labels bilingues (ATC)** : chaque concept ATC a un `rdfs:label` `@fr` *et* `@en`. Filtrer le français : `OPTIONAL { ?concept rdfs:label ?label . FILTER (lang(?label) = "fr") }`. Les 5 conteneurs « Concept retirés » n'ont pas de label fr → `label` null.
 - **Namespace TopBraid (`j.1:`)** : le RDF ADICAP déclare son namespace propre sous le préfixe auto-généré `j.1:` = `https://data.esante.gouv.fr/adicap/`. En SPARQL on le redéclare proprement (`PREFIX adicap: <https://data.esante.gouv.fr/adicap/>`) — ne pas se fier au préfixe `j.1` du fichier.
 - **DAG vs arbre** : le modèle nested set ne supporte qu'une arborescence. Notre choix : *duplication* (un nœud multi-parents apparaît plusieurs fois). CIM10 est un arbre pur sur `rdfs:subClassOf` (0 duplication), mais le mécanisme est en place pour SNOMED / CCAM.
 - **Requêtes SPARQL** : utiliser le `rdfs:subClassOf` direct (pas `*` ni `+`) pour `EDGES_QUERY` — sinon on récupère la fermeture transitive et le DFS est cassé. L'`ATTRS_QUERY` peut faire des `OPTIONAL` pour les champs absents (synonymes, notes…), polars gérera les nulls.
