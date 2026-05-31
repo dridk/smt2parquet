@@ -85,7 +85,7 @@ def build_nested_set(
             raise ValueError(f"Cycle detected at node {node!r}")
         active.add(node)
         counter[0] += 1
-        left = counter[0]
+        lft = counter[0]
         node_code = code_of.get(node, node)
         path_stack.append(node_code)
 
@@ -93,11 +93,11 @@ def build_nested_set(
             dfs(child, depth + 1)
 
         counter[0] += 1
-        right = counter[0]
+        rgt = counter[0]
         rows.append({
             "node": node,
-            "left": left,
-            "right": right,
+            "lft": lft,
+            "rgt": rgt,
             "depth": depth,
             "path": path_sep.join(path_stack),
         })
@@ -115,8 +115,8 @@ def build_nested_set(
         rows,
         schema={
             "node": pl.String,
-            "left": pl.Int64,
-            "right": pl.Int64,
+            "lft": pl.Int64,
+            "rgt": pl.Int64,
             "depth": pl.Int64,
             "path": pl.String,
         },

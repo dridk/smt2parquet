@@ -85,8 +85,8 @@ def convert(rdf_path: Path, out_path: Path) -> None:
             "code",
             "label",
             "depth",
-            "left",
-            "right",
+            "lft",
+            "rgt",
             "path",
             "synonymes",
             "inclusion_note",
@@ -97,7 +97,7 @@ def convert(rdf_path: Path, out_path: Path) -> None:
             "mode_acces",
             "action",
         )
-        .sort("left")
+        .sort("lft")
     )
 
     metadata = {
