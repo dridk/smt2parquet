@@ -24,12 +24,16 @@ PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
 PREFIX xkos: <http://rdf-vocabulary.ddialliance.org/xkos#>
 PREFIX dc: <http://purl.org/dc/elements/1.1/>
-SELECT ?concept ?code ?label ?type ?synonyme ?inclusion_note WHERE {
+PREFIX atih-cim10: <http://data.esante.gouv.fr/atih-cim10#>
+SELECT ?concept ?code ?label ?type ?synonyme ?inclusion_note
+       ?exclusion_note ?exclusion_code WHERE {
     ?concept skos:notation ?code .
     ?concept rdfs:label ?label .
     ?concept dc:type ?type .
     OPTIONAL { ?concept skos:altLabel ?synonyme . }
     OPTIONAL { ?concept xkos:inclusionNote ?inclusion_note . }
+    OPTIONAL { ?concept xkos:exclusionNote ?exclusion_note . }
+    OPTIONAL { ?concept atih-cim10:exclusion [ skos:notation ?exclusion_code ] . }
 }
 """
 
@@ -47,6 +51,8 @@ def convert(rdf_path: Path, out_path: Path) -> None:
         pl.col("type").first(),
         pl.col("synonyme").drop_nulls().unique().alias("synonymes"),
         pl.col("inclusion_note").first(),
+        pl.col("exclusion_note").first(),
+        pl.col("exclusion_code").drop_nulls().unique().sort().alias("exclusion_codes"),
     )
 
     code_of = dict(
@@ -73,6 +79,8 @@ def convert(rdf_path: Path, out_path: Path) -> None:
             "path",
             "synonymes",
             "inclusion_note",
+            "exclusion_note",
+            "exclusion_codes",
             core.keywords_expr(joined, ["label", "synonymes"]),
         )
         .sort("lft")
