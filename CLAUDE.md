@@ -81,6 +81,26 @@ Le CLI :
 | `path` | str | chaîne des codes des ancêtres jusqu'au nœud, séparés par `/` (ex. `I/A00-A09/A00/A00.0`) |
 | `synonymes` | list[str] | `skos:altLabel` agrégés, dédupliqués |
 | `inclusion_note` | str | `xkos:inclusionNote` |
+| `keywords` | str | chaîne normalisée pour la recherche plein-texte (voir ci-dessous) |
+
+### Colonne `keywords` (recherche textuelle)
+
+Dernière colonne de chaque sortie : une **chaîne `str` normalisée** concaténant
+les champs textuels pertinents du concept, pour requêter une seule colonne en
+SQL/DuckDB (`... WHERE keywords LIKE '%oesophage%'`). Normalisation par
+`core.keywords_expr` : minuscules → ligatures (`œ`/`æ` → `oe`/`ae`) → NFKD →
+suppression des diacritiques → ponctuation transformée en séparateur → **tokens
+uniques triés** joints par espace. La recherche est donc insensible à la casse et
+aux accents ; un concept sans source produit `""`.
+
+Le **contenu** est choisi par module (chaque `convert()` passe ses colonnes à
+`core.keywords_expr(joined, [...])`) :
+- **CIM10** : `label`, `synonymes`.
+- **CCAM** : `label`, `synonymes`, `topographie`, `type_acte`, `mode_acces`, `action`.
+- **ADICAP** : `label`, `anatomy_label`.
+
+Les codes (`code`, `dictionary_code`, `anatomy_code`) et les notes longues
+(`inclusion_note`, `exclusion_note`, `definition`) en sont volontairement exclus.
 
 Colonnes spécifiques possibles selon la terminologie :
 - **CCAM** : `topographie`, `type_acte`, `mode_acces`, `action` — labels de concepts liés via `ccam:topographie [ rdfs:label ?x ]` etc.

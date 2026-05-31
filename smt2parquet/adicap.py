@@ -67,9 +67,11 @@ def convert(rdf_path: Path, out_path: Path) -> None:
         code_of=code_of,
     )
 
+    joined = nested.join(
+        attrs_agg, left_on="node", right_on="concept", how="left"
+    )
     df = (
-        nested.join(attrs_agg, left_on="node", right_on="concept", how="left")
-        .select(
+        joined.select(
             "code",
             "label",
             "dictionary_code",
@@ -79,6 +81,7 @@ def convert(rdf_path: Path, out_path: Path) -> None:
             "path",
             "anatomy_code",
             "anatomy_label",
+            core.keywords_expr(joined, ["label", "anatomy_label"]),
         )
         .sort("lft")
     )

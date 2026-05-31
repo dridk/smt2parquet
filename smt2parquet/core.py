@@ -123,6 +123,39 @@ def build_nested_set(
     )
 
 
+def keywords_expr(
+    df: pl.DataFrame, columns: Iterable[str], *, alias: str = "keywords"
+) -> pl.Expr:
+    """Expression concaténant `columns` en une chaîne normalisée pour la recherche.
+
+    Chaque colonne peut être `str` ou `list[str]` (ex. `synonymes`) — détecté via
+    `df.schema`. Normalisation : lowercase -> ligatures (œ/æ -> oe/ae) -> NFKD ->
+    suppression des diacritiques -> ponctuation remplacée par espace -> tokens
+    uniques triés joints par espace. Les nulls sont ignorés ; un concept sans
+    aucune source produit une chaîne vide.
+    """
+    parts: list[pl.Expr] = []
+    for col in columns:
+        if df.schema[col] == pl.List(pl.String):
+            parts.append(pl.col(col).list.join(" "))
+        else:
+            parts.append(pl.col(col))
+    return (
+        pl.concat_str(parts, separator=" ", ignore_nulls=True)
+        .str.to_lowercase()
+        .str.replace_many(["œ", "æ"], ["oe", "ae"])
+        .str.normalize("NFKD")
+        .str.replace_all(r"\p{M}", "")  # diacritiques combinants laissés par NFKD
+        .str.replace_all(r"[^\w\s]", " ")  # ponctuation -> séparateur
+        .str.split(" ")
+        .list.eval(pl.element().filter(pl.element().str.len_chars() > 0))
+        .list.unique()
+        .list.sort()
+        .list.join(" ")
+        .alias(alias)
+    )
+
+
 def write_parquet_with_metadata(
     df: pl.DataFrame, out_path: Path, metadata: dict[str, str]
 ) -> None:
