@@ -4,85 +4,82 @@ Convertit les terminologies médicales du portail [**SMT**](https://smt.esante.g
 
 Le résultat : un Parquet par terminologie avec, pour chaque concept, les colonnes `code`, `label`, `path`, et le triplet `lft`/`rgt`/`depth` qui permettent de requêter ancêtres et descendants par une simple comparaison d'intervalles.
 
-## Terminologies supportées
+Les fichiers parquets sont directement disponnible pour utilisation sur [data.gouv](https://www.data.gouv.fr/datasets/terminologie-au-format-parquet).
 
-| Nom | Fichier RDF attendu | Sortie |
-|---|---|---|
-| `cim10` | `rdf/terminologie-cim-10-<version>.rdf` | `parquet/cim10-<version>.parquet` |
-| `ccam` | `rdf/terminologie-ccam-<version>.rdf` | `parquet/ccam-<version>.parquet` |
-
-La `<version>` est celle du nom de fichier (`2025-01-01` pour la CIM10, `v82.00` pour la CCAM…) — elle est également écrite dans les **métadonnées du Parquet** (`terminology`, `version`, `source_file`, `generated_at`).
-
-Récupérez les fichiers RDF depuis le portail [SMT](https://smt.esante.gouv.fr/) et placez-les dans `rdf/`.
+Ces fichiers peuvent être consommer avec de nombreux outils comme [duckdb](https://duckdb.org/), [pola.rs](https://pola.rs/) ou [clickhouse](https://clickhouse.com/).
 
 ## Installation
 
 ```bash
+git clone https://github.com/dridk/smt2parquet.git
+cd smt2parquet
 uv sync
 ```
 
-Python ≥ 3.13. Dépendances : `polars`, `rdflib`, `pyarrow`.
+## Générer un Parquet
 
-## Utilisation
+Le principe est le même pour les trois terminologies :
+
+1. **Télécharger le RDF** depuis le portail [SMT](https://smt.esante.gouv.fr/) (sélectionner la terminologie, puis exporter au format RDF).
+2. **Le placer dans `rdf/`** sans renommer — le nom de fichier doit suivre le motif attendu (la version en est extraite automatiquement) :
+   - CIM10 → `rdf/terminologie-cim-10-<version>.rdf` (ex. `terminologie-cim-10-2025-01-01.rdf`)
+   - CCAM → `rdf/terminologie-ccam-<version>.rdf`
+   - ADICAP → `rdf/terminologie-adicap-<version>.rdf` (ex. `terminologie-adicap-2024-10.rdf`)
+3. **Lancer la conversion** :
+   ```bash
+   uv run python -m smt2parquet cim10    # ou ccam, ou adicap
+   ```
+
+Les détails (commande, colonnes, exemples) propres à chaque terminologie sont dans les sections ci-dessous.
+
+## Le modèle nested set
+
+
+Pour tout nœud P, ses descendants sont les lignes où lft ∈ ]P.lft, P.rgt[
+                  ses ancêtres   sont les lignes où lft < P.lft ET rgt > P.rgt
+
+
+Les nœuds avec plusieurs parents (DAG) sont **dupliqués** : chaque occurrence sous un parent différent reçoit son propre `lft`/`rgt`/`depth`/`path`. 
+
+Chaque Parquet embarque aussi des **métadonnées** dans le footer (`terminology`, `version`, `source_file`, `generated_at`) — voir l'exemple de lecture dans chaque section.
+
+---
+
+## CIM10
+
+Classification internationale des maladies, 10ᵉ révision (ICD-10)
 
 ```bash
 uv run python -m smt2parquet cim10
-uv run python -m smt2parquet ccam
+# rdf/terminologie-cim-10-<version>.rdf  →  parquet/cim10-<version>.parquet
 ```
 
-Le CLI résout le glob `rdf/terminologie-<nom>-*.rdf`, extrait la version du nom de fichier, et écrit `parquet/<nom>-<version>.parquet`.
-
-## Schéma de sortie
-
-Colonnes communes à toutes les terminologies :
+### Colonnes
 
 | Colonne | Type | Description |
 |---|---|---|
 | `code` | `str` | Code du concept (`skos:notation`) |
 | `label` | `str` | Libellé (`rdfs:label`) |
-| `depth` | `i64` | Profondeur dans l'arbre (0 = racine réelle) |
+| `type` | `str` | `chapter` / `block` / `category` (`dc:type`) |
+| `depth` | `i64` | Profondeur dans l'arbre (0 = chapitre) |
 | `lft` | `i64` | Borne gauche du nested set |
 | `rgt` | `i64` | Borne droite du nested set |
 | `path` | `str` | Chaîne des codes des ancêtres, ex. `I/A00-A09/A00/A00.0` |
 | `synonymes` | `list[str]` | `skos:altLabel` dédupliqués |
 | `inclusion_note` | `str?` | `xkos:inclusionNote` |
 
-Colonnes spécifiques :
-
-- **CIM10** : `type` (`chapter` / `block` / `category`)
-- **CCAM** : `exclusion_note`, `definition`, `topographie`, `type_acte`, `mode_acces`, `action`
-
-Les nœuds avec plusieurs parents (DAG) sont **dupliqués** : chaque occurrence sous un parent différent reçoit son propre `lft`/`rgt`/`depth`/`path`.
-
-## Pourquoi nested set ?
-
-Avec `parent_code` ou un `path` listé, retrouver tous les descendants d'un nœud demande une jointure récursive (CTE). Avec `lft`/`rgt`, un simple `BETWEEN` suffit, et c'est indexable.
-
-```
-Pour tout nœud P, ses descendants sont les lignes où lft ∈ ]P.lft, P.rgt[
-                  ses ancêtres   sont les lignes où lft < P.lft ET rgt > P.rgt
-```
-
-## Exemples avec DuckDB
-
-[DuckDB](https://duckdb.org/) lit directement le Parquet sans import. Les requêtes ci-dessous tournent dans le CLI DuckDB ou via la lib Python.
-
-### Charger et lister les chapitres
+### Exemples
 
 ```sql
--- Affiche les chapitres CIM10 (depth = 0)
+-- Lister les chapitres (depth = 0)
 SELECT code, label, lft, rgt
 FROM 'parquet/cim10-2025-01-01.parquet'
 WHERE depth = 0
 ORDER BY lft;
 ```
 
-> Les colonnes s'appellent `lft`/`rgt` (convention nested set, façon Celko) plutôt que `left`/`right` pour éviter la collision avec les mots-clés SQL `LEFT`/`RIGHT` — pas besoin de guillemets.
-
-### Tous les descendants d'un chapitre
-
 ```sql
--- Toutes les lignes sous le chapitre I "Certaines maladies infectieuses et parasitaires"
+-- Tous les descendants du chapitre I
 WITH chapitre AS (
     SELECT lft AS l, rgt AS r
     FROM 'parquet/cim10-2025-01-01.parquet'
@@ -94,10 +91,8 @@ WHERE lft BETWEEN chapitre.l AND chapitre.r
 ORDER BY lft;
 ```
 
-### Tous les ancêtres d'un code
-
 ```sql
--- Remonter la hiérarchie depuis le code A00.0
+-- Tous les ancêtres du code A00.0
 WITH cible AS (
     SELECT lft AS l, rgt AS r
     FROM 'parquet/cim10-2025-01-01.parquet'
@@ -109,68 +104,170 @@ WHERE cible.l BETWEEN lft AND rgt
 ORDER BY depth;
 ```
 
-### Compter les codes par chapitre
+```python
+# En Python avec DuckDB
+import duckdb
 
-```sql
-SELECT
-    chap.code        AS chapitre,
-    chap.label       AS titre,
-    COUNT(*) - 1     AS nb_descendants  -- on retire le chapitre lui-même
-FROM 'parquet/cim10-2025-01-01.parquet' AS chap
-JOIN 'parquet/cim10-2025-01-01.parquet' AS sub
-  ON sub.lft BETWEEN chap.lft AND chap.rgt
-WHERE chap.depth = 0
-GROUP BY chap.code, chap.label
-ORDER BY chap.code;
+descendants = duckdb.sql("""
+    WITH t AS (SELECT lft, rgt FROM 'parquet/cim10-2025-01-01.parquet' WHERE code = 'A00')
+    SELECT c.code, c.label, c.depth
+    FROM 'parquet/cim10-2025-01-01.parquet' c, t
+    WHERE c.lft BETWEEN t.lft AND t.rgt
+    ORDER BY c.lft
+""").pl()  # → DataFrame Polars
 ```
 
-### Filtrer la CCAM par topographie
+```python
+# Lire les métadonnées du fichier
+import pyarrow.parquet as pq
+
+md = pq.read_metadata("parquet/cim10-2025-01-01.parquet").metadata
+print({k.decode(): v.decode() for k, v in md.items() if not k.startswith(b"ARROW")})
+# {'terminology': 'cim10', 'version': '2025-01-01', 'source_file': '...', 'generated_at': '...'}
+```
+
+---
+
+## CCAM
+
+Classification commune des actes médicaux — actes techniques. 
+
+```bash
+uv run python -m smt2parquet ccam
+# rdf/terminologie-ccam-<version>.rdf  →  parquet/ccam-<version>.parquet
+```
+
+### Colonnes
+
+| Colonne | Type | Description |
+|---|---|---|
+| `code` | `str` | Code de l'acte (`skos:notation`) |
+| `label` | `str` | Libellé (`rdfs:label`) |
+| `depth` | `i64` | Profondeur dans l'arbre |
+| `lft` | `i64` | Borne gauche du nested set |
+| `rgt` | `i64` | Borne droite du nested set |
+| `path` | `str` | Chaîne des codes des ancêtres |
+| `synonymes` | `list[str]` | `skos:altLabel` dédupliqués |
+| `inclusion_note` | `str?` | `xkos:inclusionNote` |
+| `exclusion_note` | `str?` | `xkos:exclusionNote` |
+| `definition` | `str?` | `skos:definition` |
+| `topographie` | `str?` | Libellé du concept lié `ccam:topographie` |
+| `type_acte` | `str?` | Libellé du concept lié `ccam:typeActe` |
+| `mode_acces` | `str?` | Libellé du concept lié `ccam:modeAcces` |
+| `action` | `str?` | Libellé du concept lié `ccam:action` |
+
+### Exemples
 
 ```sql
--- Tous les actes CCAM avec topographie "Os de la main"
+-- Filtrer par topographie
 SELECT code, label, path
 FROM 'parquet/ccam-v82.00.parquet'
 WHERE topographie = 'Os de la main'
 LIMIT 20;
 ```
 
-
-### En Python avec DuckDB
+```sql
+-- Tous les descendants d'un nœud de la hiérarchie
+WITH n AS (
+    SELECT lft AS l, rgt AS r
+    FROM 'parquet/ccam-v82.00.parquet'
+    WHERE code = '01'
+)
+SELECT code, label, type_acte, mode_acces
+FROM 'parquet/ccam-v82.00.parquet', n
+WHERE lft BETWEEN n.l AND n.r
+ORDER BY lft;
+```
 
 ```python
+# En Python avec DuckDB
 import duckdb
 
-con = duckdb.connect()
-
-# Charger en table (optionnel — DuckDB peut lire le parquet directement)
-con.execute("""
-    CREATE TABLE cim10 AS
-    SELECT * FROM 'parquet/cim10-2025-01-01.parquet'
-""")
-
-# Descendants d'un nœud, classiquement
-descendants = con.execute("""
-    WITH t AS (SELECT lft, rgt FROM cim10 WHERE code = 'A00')
-    SELECT c.code, c.label, c.depth
-    FROM cim10 c, t
-    WHERE c.lft BETWEEN t.lft AND t.rgt
-    ORDER BY c.lft
+actes = duckdb.sql("""
+    SELECT code, label, topographie, action
+    FROM 'parquet/ccam-v82.00.parquet'
+    WHERE action IS NOT NULL
 """).pl()  # → DataFrame Polars
-
-print(descendants)
 ```
-
-### Lire les métadonnées du fichier
 
 ```python
+# Lire les métadonnées du fichier
 import pyarrow.parquet as pq
 
-md = pq.read_metadata("parquet/cim10-2025-01-01.parquet").metadata
+md = pq.read_metadata("parquet/ccam-v82.00.parquet").metadata
 print({k.decode(): v.decode() for k, v in md.items() if not k.startswith(b"ARROW")})
-# {'terminology': 'cim10', 'version': '2025-01-01',
-#  'source_file': 'terminologie-cim-10-2025-01-01.rdf',
-#  'generated_at': '2026-05-11T...'}
+# {'terminology': 'ccam', 'version': 'v82.00', 'source_file': '...', 'generated_at': '...'}
 ```
+
+---
+
+## ADICAP
+
+Codes ADICAP (anatomie et cytologie pathologiques). La racine masquée donne 9 dictionnaires (axes D1–D8 + D8L) à `depth 0`.
+
+```bash
+uv run python -m smt2parquet adicap
+# rdf/terminologie-adicap-<version>.rdf  →  parquet/adicap-<version>.parquet
+```
+
+### Colonnes
+
+| Colonne | Type | Description |
+|---|---|---|
+| `code` | `str` | Code du concept (`skos:notation`) |
+| `label` | `str` | Libellé (`rdfs:label`) |
+| `dictionary_code` | `str?` | Axe du dictionnaire D1–D8L (`adicap:dictionaryCode`) |
+| `depth` | `i64` | Profondeur dans l'arbre (0 = dictionnaire) |
+| `lft` | `i64` | Borne gauche du nested set |
+| `rgt` | `i64` | Borne droite du nested set |
+| `path` | `str` | Chaîne des codes des ancêtres |
+| `anatomy_code` | `str?` | `skos:notation` du concept lié `adicap:anatomy` |
+| `anatomy_label` | `str?` | `rdfs:label` du concept lié `adicap:anatomy` |
+
+### Exemples
+
+```sql
+-- Lister les 9 dictionnaires (depth = 0)
+SELECT code, label, dictionary_code, lft, rgt
+FROM 'parquet/adicap-2024-10.parquet'
+WHERE depth = 0
+ORDER BY lft;
+```
+
+```sql
+-- Tous les concepts d'un dictionnaire donné
+WITH dico AS (
+    SELECT lft AS l, rgt AS r
+    FROM 'parquet/adicap-2024-10.parquet'
+    WHERE dictionary_code = 'D1'
+)
+SELECT code, label, anatomy_label
+FROM 'parquet/adicap-2024-10.parquet', dico
+WHERE lft BETWEEN dico.l AND dico.r
+ORDER BY lft;
+```
+
+```python
+# En Python avec DuckDB
+import duckdb
+
+avec_anatomie = duckdb.sql("""
+    SELECT code, label, anatomy_code, anatomy_label
+    FROM 'parquet/adicap-2024-10.parquet'
+    WHERE anatomy_code IS NOT NULL
+""").pl()  # → DataFrame Polars
+```
+
+```python
+# Lire les métadonnées du fichier
+import pyarrow.parquet as pq
+
+md = pq.read_metadata("parquet/adicap-2024-10.parquet").metadata
+print({k.decode(): v.decode() for k, v in md.items() if not k.startswith(b"ARROW")})
+# {'terminology': 'adicap', 'version': '2024-10', 'source_file': '...', 'generated_at': '...'}
+```
+
+---
 
 ## Ajouter une nouvelle terminologie
 
@@ -180,7 +277,7 @@ print({k.decode(): v.decode() for k, v in md.items() if not k.startswith(b"ARROW
    - `convert(rdf_path, out_path)`.
 2. Ajouter une entrée dans `TERMINOLOGIES` de `smt2parquet/__main__.py`.
 
-`smt2parquet/core.py` ne devrait pas avoir à bouger. Voir `smt2parquet/cim10.py` et `smt2parquet/ccam.py` pour deux exemples — la CCAM montre comment intégrer des concepts liés (`topographie`, `type_acte`…) via `OPTIONAL { ?concept ccam:topographie ?x . ?x rdfs:label ?topographie }`.
+`smt2parquet/core.py` ne devrait pas avoir à bouger. Voir `smt2parquet/cim10.py` (arbre simple), `smt2parquet/ccam.py` (concepts liés via `OPTIONAL { ?concept ccam:topographie ?x . ?x rdfs:label ?topographie }`) et `smt2parquet/adicap.py` (racine réelle masquée + concept lié `anatomy`).
 
 ## Licence
 
