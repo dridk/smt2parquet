@@ -81,6 +81,14 @@ def convert(rdf_path: Path, out_path: Path) -> None:
 
     joined = nested.join(
         attrs_agg, left_on="node", right_on="concept", how="left"
+    ).with_columns(
+        # Les nœuds de hiérarchie (chapitres/catégories) ont un label préfixé
+        # par leur propre code (ex. "01.01 ACTES..."), pas les actes feuilles.
+        # On retire ce préfixe quand il est présent (ancré sur le code exact).
+        pl.when(pl.col("label").str.starts_with(pl.col("code") + " "))
+        .then(pl.col("label").str.slice(pl.col("code").str.len_chars() + 1))
+        .otherwise(pl.col("label"))
+        .alias("label")
     )
     df = (
         joined.select(
