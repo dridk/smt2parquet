@@ -19,3 +19,26 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+Data licenses / Licences des données
+
+The MIT license above applies ONLY to the smt2parquet source code. The
+generated Parquet files contain medical terminologies sourced from the
+Serveur Multi-Terminologies (SMT) operated by the Agence du Numérique en
+Santé (ANS) — https://smt.esante.gouv.fr/ — and remain subject to the
+license of each source terminology:
+
+  - CIM-10 FR PMSI : CC BY-NC-ND 3.0 IGO
+    https://smt.esante.gouv.fr/terminologie-cim-10/
+  - CCAM           : Licence Ouverte v2.0 (Etalab, LOv2)
+    https://smt.esante.gouv.fr/terminologie-ccam/
+  - ADICAP         : Licence Ouverte v2.0 (Etalab, LOv2)
+    https://smt.esante.gouv.fr/terminologie-adicap/
+  - ATC            : CC BY-ND 3.0 IGO
+    https://smt.esante.gouv.fr/terminologie-atc/
+
+Each generated Parquet file also embeds its own license in the footer
+key-value metadata (key "license"). Always check the SMT portal for the
+authoritative and up-to-date terms of each terminology.

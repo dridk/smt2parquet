@@ -281,4 +281,20 @@ print({k.decode(): v.decode() for k, v in md.items() if not k.startswith(b"ARROW
 
 ## Licence
 
-MIT
+Le **code** de `smt2parquet` est distribué sous licence **MIT** (voir [`LICENSE`](LICENSE)).
+
+Les **fichiers Parquet générés** contiennent des terminologies médicales issues du
+[**Serveur Multi-Terminologies (SMT)**](https://smt.esante.gouv.fr/) opéré par
+l'Agence du Numérique en Santé (ANS). Ils restent soumis à la licence de chaque
+terminologie source :
+
+| Terminologie | Licence | Page SMT |
+|---|---|---|
+| CIM-10 FR PMSI | CC BY-NC-ND 3.0 IGO | [terminologie-cim-10](https://smt.esante.gouv.fr/terminologie-cim-10/) |
+| CCAM | Licence Ouverte v2.0 (Etalab, LOv2) | [terminologie-ccam](https://smt.esante.gouv.fr/terminologie-ccam/) |
+| ADICAP | Licence Ouverte v2.0 (Etalab, LOv2) | [terminologie-adicap](https://smt.esante.gouv.fr/terminologie-adicap/) |
+| ATC | CC BY-ND 3.0 IGO | [terminologie-atc](https://smt.esante.gouv.fr/terminologie-atc/) |
+
+Chaque Parquet embarque aussi sa propre licence dans les métadonnées du footer
+(clé `license`). Référez-vous au [portail SMT](https://smt.esante.gouv.fr/) pour
+les conditions d'utilisation faisant foi.
