@@ -11,6 +11,9 @@ from smt2parquet import core
 BASE_URI = "http://data.esante.gouv.fr/cnam/ccam/Acte"
 RDF_FILENAME_PREFIX = "terminologie-ccam-"
 TERMINOLOGY_NAME = "ccam"
+SOURCE = "CCAM"
+SOURCE_URL = "https://smt.esante.gouv.fr/terminologie-ccam/"
+LICENSE = "LOv2"
 
 # Direct subClassOf edges, restricted to nodes with a notation (skips OWL
 # blank-node restrictions like <rdfs:subClassOf rdf:nodeID="..."/>).
@@ -126,6 +129,9 @@ def convert(rdf_path: Path, out_path: Path) -> None:
         "terminology": TERMINOLOGY_NAME,
         "version": version,
         "source_file": rdf_path.name,
+        "source": SOURCE,
+        "url": SOURCE_URL,
+        "license": LICENSE,
         "generated_at": datetime.now(UTC).isoformat(),
     }
 

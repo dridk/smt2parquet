@@ -15,6 +15,9 @@ from smt2parquet import core
 BASE_URI = "http://www.w3.org/2002/07/owl#Thing"
 RDF_FILENAME_PREFIX = "terminologie-atc-"
 TERMINOLOGY_NAME = "atc"
+SOURCE = "ATC"
+SOURCE_URL = "https://smt.esante.gouv.fr/terminologie-atc/"
+LICENSE = "CC BY-ND 3.0 IGO"
 
 # subClassOf direct. Pas de filtre : ATC est un arbre propre (1 parent/nœud).
 # Les arêtes `ATC subClassOf owl:Thing` et `Concept_retirés subClassOf owl:Thing`
@@ -89,6 +92,9 @@ def convert(rdf_path: Path, out_path: Path) -> None:
         "terminology": TERMINOLOGY_NAME,
         "version": version,
         "source_file": rdf_path.name,
+        "source": SOURCE,
+        "url": SOURCE_URL,
+        "license": LICENSE,
         "generated_at": datetime.now(UTC).isoformat(),
     }
 

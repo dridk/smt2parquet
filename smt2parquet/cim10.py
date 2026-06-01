@@ -11,6 +11,9 @@ from smt2parquet import core
 BASE_URI = "http://data.esante.gouv.fr/atih/cim10"
 RDF_FILENAME_PREFIX = "terminologie-cim-10-"
 TERMINOLOGY_NAME = "cim10"
+SOURCE = "CIM-10 FR PMSI"
+SOURCE_URL = "https://smt.esante.gouv.fr/terminologie-cim-10/"
+LICENSE = "CC BY-NC-ND 3.0 IGO"
 
 EDGES_QUERY = """
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -90,6 +93,9 @@ def convert(rdf_path: Path, out_path: Path) -> None:
         "terminology": TERMINOLOGY_NAME,
         "version": version,
         "source_file": rdf_path.name,
+        "source": SOURCE,
+        "url": SOURCE_URL,
+        "license": LICENSE,
         "generated_at": datetime.now(UTC).isoformat(),
     }
 

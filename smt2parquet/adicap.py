@@ -13,6 +13,9 @@ from smt2parquet import core
 BASE_URI = "https://data.esante.gouv.fr/adicap/ADICAP"
 RDF_FILENAME_PREFIX = "terminologie-adicap-"
 TERMINOLOGY_NAME = "adicap"
+SOURCE = "ADICAP"
+SOURCE_URL = "https://smt.esante.gouv.fr/terminologie-adicap/"
+LICENSE = "LOv2"
 
 # subClassOf direct. Pas de filtre blank node : ADICAP est un arbre propre.
 # L'arête `ADICAP subClassOf owl:Thing` est inoffensive (owl:Thing jamais visité).
@@ -90,6 +93,9 @@ def convert(rdf_path: Path, out_path: Path) -> None:
         "terminology": TERMINOLOGY_NAME,
         "version": version,
         "source_file": rdf_path.name,
+        "source": SOURCE,
+        "url": SOURCE_URL,
+        "license": LICENSE,
         "generated_at": datetime.now(UTC).isoformat(),
     }
 

@@ -131,7 +131,14 @@ Le DataFrame est trié par `lft` (ordre DFS préfixe naturel).
 - `terminology` — nom court (ex. `cim10`)
 - `version` — `YYYY-MM-DD` extrait du nom de fichier source
 - `source_file` — nom du RDF d'origine
+- `source` — libellé de la terminologie (ex. `CIM-10 FR PMSI`)
+- `url` — page SMT de la terminologie
+- `license` — licence de diffusion (ex. `CC BY-NC-ND 3.0 IGO`, `LOv2`)
 - `generated_at` — ISO 8601 UTC
+
+`source`/`url`/`license` sont des **constantes par module** (`SOURCE`,
+`SOURCE_URL`, `LICENSE`, déclarées à côté de `TERMINOLOGY_NAME`) — chaque
+terminologie porte sa propre licence.
 
 Lecture :
 ```python
@@ -145,7 +152,7 @@ md[b"version"]  # b"2025-01-01"
 1. Créer `smt2parquet/<nom>.py` exposant :
    - `BASE_URI` (URI racine, peut être virtuelle),
    - `RDF_FILENAME_PREFIX` (préfixe du nom de fichier pour `extract_version`),
-   - `TERMINOLOGY_NAME`,
+   - `TERMINOLOGY_NAME`, `SOURCE`, `SOURCE_URL`, `LICENSE`,
    - `EDGES_QUERY`, `ATTRS_QUERY` (SPARQL),
    - `convert(rdf_path, out_path)`.
 2. Ajouter une entrée dans `TERMINOLOGIES` de `smt2parquet/__main__.py` :
