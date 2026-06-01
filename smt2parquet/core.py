@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+import re
+import unicodedata
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from pathlib import Path
@@ -11,6 +13,39 @@ import pyarrow.parquet as pq
 import rdflib
 
 log = logging.getLogger(__name__)
+
+_STOPWORDS_PATH = Path(__file__).resolve().parent / "stopwords_fr.txt"
+
+
+def _normalize_tokens(text: str) -> list[str]:
+    """Tokénise comme le pipeline polars de `keywords_expr` (doit rester aligné).
+
+    lowercase -> ligatures (œ/æ -> oe/ae) -> NFKD -> suppression des diacritiques
+    -> ponctuation remplacée par espace -> split sur les espaces (tokens vides
+    écartés).
+    """
+    text = text.lower().replace("œ", "oe").replace("æ", "ae")
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    text = re.sub(r"[^\w\s]", " ", text)
+    return text.split()
+
+
+def _load_stopwords() -> list[str]:
+    """Charge stopwords-fr et les normalise comme les tokens des keywords.
+
+    Les stopwords composés (`aujourd'hui`, `celle-ci`) sont éclatés en tokens
+    simples par la même normalisation, de sorte que chaque fragment normalisé
+    (`aujourd`, `hui`, `celle`, `ci`, …) soit filtré.
+    """
+    words: set[str] = set()
+    for line in _STOPWORDS_PATH.read_text(encoding="utf-8").splitlines():
+        words.update(_normalize_tokens(line))
+    return sorted(words)
+
+
+# Liste figée au chargement du module ; consommée par `pl.Expr.is_in`.
+FRENCH_STOPWORDS: list[str] = _load_stopwords()
 
 
 def load_graph(path: Path) -> rdflib.Graph:
@@ -124,15 +159,25 @@ def build_nested_set(
 
 
 def keywords_expr(
-    df: pl.DataFrame, columns: Iterable[str], *, alias: str = "keywords"
+    df: pl.DataFrame,
+    columns: Iterable[str],
+    *,
+    code: str | None = None,
+    alias: str = "keywords",
 ) -> pl.Expr:
     """Expression concaténant `columns` en une chaîne normalisée pour la recherche.
 
     Chaque colonne peut être `str` ou `list[str]` (ex. `synonymes`) — détecté via
     `df.schema`. Normalisation : lowercase -> ligatures (œ/æ -> oe/ae) -> NFKD ->
     suppression des diacritiques -> ponctuation remplacée par espace -> tokens
-    uniques triés joints par espace. Les nulls sont ignorés ; un concept sans
-    aucune source produit une chaîne vide.
+    uniques triés joints par espace. Les stop words français (`FRENCH_STOPWORDS`)
+    sont retirés. Les nulls sont ignorés ; un concept sans aucune source produit
+    une chaîne vide.
+
+    Si `code` (nom de colonne) est fourni, ce code est préfixé **en première
+    position**, gardé verbatim et seulement mis en minuscules (la ponctuation
+    n'est pas découpée), puis suivi des tokens normalisés triés. Un code null
+    (nœuds ombrelles) est ignoré.
     """
     parts: list[pl.Expr] = []
     for col in columns:
@@ -140,7 +185,7 @@ def keywords_expr(
             parts.append(pl.col(col).list.join(" "))
         else:
             parts.append(pl.col(col))
-    return (
+    body = (
         pl.concat_str(parts, separator=" ", ignore_nulls=True)
         .str.to_lowercase()
         .str.replace_many(["œ", "æ"], ["oe", "ae"])
@@ -148,10 +193,25 @@ def keywords_expr(
         .str.replace_all(r"\p{M}", "")  # diacritiques combinants laissés par NFKD
         .str.replace_all(r"[^\w\s]", " ")  # ponctuation -> séparateur
         .str.split(" ")
-        .list.eval(pl.element().filter(pl.element().str.len_chars() > 0))
+        .list.eval(
+            pl.element().filter(
+                (pl.element().str.len_chars() > 0)
+                & pl.element().is_in(FRENCH_STOPWORDS).not_()
+            )
+        )
         .list.unique()
         .list.sort()
         .list.join(" ")
+    )
+    if code is None:
+        return body.alias(alias)
+    return (
+        pl.concat_str(
+            [pl.col(code).str.to_lowercase(), body],
+            separator=" ",
+            ignore_nulls=True,
+        )
+        .str.strip_chars()  # évite l'espace résiduel si body == "" ou code null
         .alias(alias)
     )
 

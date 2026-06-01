@@ -80,7 +80,7 @@ def convert(rdf_path: Path, out_path: Path) -> None:
             "lft",
             "rgt",
             "path",
-            core.keywords_expr(joined, ["label"]),
+            core.keywords_expr(joined, ["label"], code="code"),
         )
         .sort("lft")
     )

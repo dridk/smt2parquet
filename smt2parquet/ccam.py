@@ -116,6 +116,7 @@ def convert(rdf_path: Path, out_path: Path) -> None:
                     "mode_acces",
                     "action",
                 ],
+                code="code",
             ),
         )
         .sort("lft")

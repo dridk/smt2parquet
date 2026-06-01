@@ -90,9 +90,23 @@ Dernière colonne de chaque sortie : une **chaîne `str` normalisée** concatén
 les champs textuels pertinents du concept, pour requêter une seule colonne en
 SQL/DuckDB (`... WHERE keywords LIKE '%oesophage%'`). Normalisation par
 `core.keywords_expr` : minuscules → ligatures (`œ`/`æ` → `oe`/`ae`) → NFKD →
-suppression des diacritiques → ponctuation transformée en séparateur → **tokens
-uniques triés** joints par espace. La recherche est donc insensible à la casse et
-aux accents ; un concept sans source produit `""`.
+suppression des diacritiques → ponctuation transformée en séparateur →
+**suppression des stop words français** → **tokens uniques triés** joints par
+espace. La recherche est donc insensible à la casse et aux accents ; un concept
+sans source produit `""`.
+
+Les stop words proviennent de
+[stopwords-iso/stopwords-fr](https://github.com/stopwords-iso/stopwords-fr),
+vendus dans `smt2parquet/stopwords_fr.txt`. Ils sont normalisés par le **même**
+pipeline que les tokens (les composés `aujourd'hui`, `celle-ci` sont éclatés en
+fragments `aujourd`/`hui`/`celle`/`ci`) puis exposés via `core.FRENCH_STOPWORDS`.
+Le préfixe code n'est **pas** filtré (ajouté après le tri).
+
+Le **code du concept est préfixé en première position** (argument `code="code"`
+de `keywords_expr`) : gardé verbatim, seulement mis en minuscules (la ponctuation
+n'est **pas** découpée), il précède les tokens normalisés triés — ce qui permet la
+recherche par code exact (`... WHERE keywords LIKE '%a00.0%'`). Un code null
+(nœuds ombrelles) est simplement ignoré.
 
 Le **contenu** est choisi par module (chaque `convert()` passe ses colonnes à
 `core.keywords_expr(joined, [...])`) :
@@ -101,8 +115,9 @@ Le **contenu** est choisi par module (chaque `convert()` passe ses colonnes à
 - **ADICAP** : `label`, `anatomy_label`.
 - **ATC** : `label`.
 
-Les codes (`code`, `dictionary_code`, `anatomy_code`) et les notes longues
-(`inclusion_note`, `exclusion_note`, `definition`) en sont volontairement exclus.
+Hormis le `code` du concept (préfixé, cf. ci-dessus), les autres codes
+(`dictionary_code`, `anatomy_code`) et les notes longues (`inclusion_note`,
+`exclusion_note`, `definition`) restent volontairement exclus.
 
 Colonnes spécifiques possibles selon la terminologie :
 - **CCAM** : `topographie`, `type_acte`, `mode_acces`, `action` — labels de concepts liés via `ccam:topographie [ rdfs:label ?x ]` etc.

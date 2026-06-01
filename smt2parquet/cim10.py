@@ -81,7 +81,7 @@ def convert(rdf_path: Path, out_path: Path) -> None:
             "inclusion_note",
             "exclusion_note",
             "exclusion_codes",
-            core.keywords_expr(joined, ["label", "synonymes"]),
+            core.keywords_expr(joined, ["label", "synonymes"], code="code"),
         )
         .sort("lft")
     )
