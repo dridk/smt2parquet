@@ -269,6 +269,66 @@ print({k.decode(): v.decode() for k, v in md.items() if not k.startswith(b"ARROW
 
 ---
 
+## CSARR
+
+Catalogue spécifique des actes de rééducation et réadaptation. **Cas particulier : le CSARR n'est pas publié sur le SMT** — l'ATIH le diffuse sous forme d'un classeur **Excel**. La hiérarchie (chapitres → rubriques) et les actes feuilles sont reconstruits depuis l'onglet `CSARR_FINAL`, à partir des codes dotés (`01` → `01.01` → `01.01.01`) et des codes d'actes (`GKQ+190`). La racine virtuelle masquée donne les 12 chapitres à `depth 0`.
+
+1. **Télécharger le `.xls`** depuis l'[ATIH](https://www.atih.sante.fr/sites/default/files/public/content/4902/csarr_liste_analytique_2025_versioncorrigee.xls).
+2. **Le placer dans `rdf/`** sans renommer (le nom doit matcher `csarr_*.xls` ; le millésime annuel en est extrait).
+3. **Lancer la conversion** :
+   ```bash
+   uv run python -m smt2parquet csarr
+   # rdf/csarr_liste_analytique_<année>_*.xls  →  parquet/csarr-<année>.parquet
+   ```
+
+### Colonnes
+
+| Colonne | Type | Description |
+|---|---|---|
+| `code` | `str` | Code doté (chapitre/rubrique) ou code d'acte (`GKQ+190`) |
+| `label` | `str` | Libellé |
+| `type` | `str` | `chapitre` / `rubrique` / `acte` (dérivé de la structure) |
+| `depth` | `i64` | Profondeur dans l'arbre (0 = chapitre) |
+| `lft` | `i64` | Borne gauche du nested set |
+| `rgt` | `i64` | Borne droite du nested set |
+| `path` | `str` | Chaîne des codes des ancêtres, ex. `01/01.01/01.01.03/GKQ+190` |
+| `inclusion_note` | `str?` | Notes descriptives de l'acte (« Cet acte comprend : … », « Avec ou sans : … ») |
+| `extensions` | `list[str]` | Codes d'extension documentaire applicables à l'acte (ex. `ZV`, `ME`) |
+
+### Exemples
+
+```sql
+-- Lister les 12 chapitres (depth = 0)
+SELECT code, label, lft, rgt
+FROM 'parquet/csarr-2025.parquet'
+WHERE depth = 0
+ORDER BY lft;
+```
+
+```sql
+-- Tous les actes d'un chapitre donné
+WITH chap AS (
+    SELECT lft AS l, rgt AS r
+    FROM 'parquet/csarr-2025.parquet'
+    WHERE code = '01'
+)
+SELECT code, label, path
+FROM 'parquet/csarr-2025.parquet', chap
+WHERE lft BETWEEN chap.l AND chap.r AND type = 'acte'
+ORDER BY lft;
+```
+
+```python
+# Lire les métadonnées du fichier
+import pyarrow.parquet as pq
+
+md = pq.read_metadata("parquet/csarr-2025.parquet").metadata
+print({k.decode(): v.decode() for k, v in md.items() if not k.startswith(b"ARROW")})
+# {'terminology': 'csarr', 'version': '2025', 'source_file': '...', 'generated_at': '...'}
+```
+
+---
+
 ## Ajouter une nouvelle terminologie
 
 1. Créer `smt2parquet/<nom>.py` qui expose :
@@ -285,16 +345,19 @@ Le **code** de `smt2parquet` est distribué sous licence **MIT** (voir [`LICENSE
 
 Les **fichiers Parquet générés** contiennent des terminologies médicales issues du
 [**Serveur Multi-Terminologies (SMT)**](https://smt.esante.gouv.fr/) opéré par
-l'Agence du Numérique en Santé (ANS). Ils restent soumis à la licence de chaque
-terminologie source :
+l'Agence du Numérique en Santé (ANS) — à l'exception du **CSARR**, diffusé
+directement par l'[**ATIH**](https://www.atih.sante.fr/). Ils restent soumis à la
+licence de chaque terminologie source :
 
-| Terminologie | Licence | Page SMT |
+| Terminologie | Licence | Source |
 |---|---|---|
 | CIM-10 FR PMSI | CC BY-NC-ND 3.0 IGO | [terminologie-cim-10](https://smt.esante.gouv.fr/terminologie-cim-10/) |
 | CCAM | Licence Ouverte v2.0 (Etalab, LOv2) | [terminologie-ccam](https://smt.esante.gouv.fr/terminologie-ccam/) |
 | ADICAP | Licence Ouverte v2.0 (Etalab, LOv2) | [terminologie-adicap](https://smt.esante.gouv.fr/terminologie-adicap/) |
 | ATC | CC BY-ND 3.0 IGO | [terminologie-atc](https://smt.esante.gouv.fr/terminologie-atc/) |
+| CSARR | ATIH (à vérifier) | [ATIH (xls)](https://www.atih.sante.fr/sites/default/files/public/content/4902/csarr_liste_analytique_2025_versioncorrigee.xls) |
 
 Chaque Parquet embarque aussi sa propre licence dans les métadonnées du footer
-(clé `license`). Référez-vous au [portail SMT](https://smt.esante.gouv.fr/) pour
-les conditions d'utilisation faisant foi.
+(clé `license`). Référez-vous au [portail SMT](https://smt.esante.gouv.fr/) (et à
+l'[ATIH](https://www.atih.sante.fr/) pour le CSARR) pour les conditions
+d'utilisation faisant foi.

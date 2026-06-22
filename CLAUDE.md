@@ -2,6 +2,8 @@
 
 Convertit les terminologies médicales du portail **SMT** (https://smt.esante.gouv.fr/) — fichiers RDF — vers du **Parquet** en préservant la hiérarchie via le **modèle d'imbrication d'ensembles** (nested set : colonnes `lft`, `rgt`, `depth`, `path`).
 
+> La plupart des sources sont des RDF du SMT, mais le pipeline n'est pas couplé au RDF : **CSARR** (absent du SMT) part d'un classeur **Excel** de l'ATIH. Les briques de `core.py` sont agnostiques à la source ; seul le module de terminologie sait lire son format.
+
 ## Pourquoi nested set
 
 Les requêtes ancêtres/descendants deviennent triviales et indexables :
@@ -20,8 +22,9 @@ smt2parquet/
 ├── cim10.py           # Une terminologie = un fichier Python
 ├── ccam.py
 ├── adicap.py
-└── atc.py
-rdf/                   # Fichiers RDF source (non commités, ~85 Mo)
+├── atc.py
+└── csarr.py           # Source Excel (ATIH), pas RDF
+rdf/                   # Fichiers source (non commités, ~85 Mo) — RDF + le .xls CSARR
 parquet/               # Sorties générées (non commités)
 ```
 
@@ -65,9 +68,10 @@ uv run python -m smt2parquet cim10
 ```
 
 Le CLI :
-- résout `rdf/terminologie-cim-10-*.rdf` (échoue si 0 ou >1 match — pas d'ambiguïté silencieuse),
+- résout le `source_glob` de l'entrée (ex. `rdf/terminologie-cim-10-*.rdf`, ou `rdf/csarr_*.xls`) — échoue si 0 ou >1 match (pas d'ambiguïté silencieuse),
+- dérive la version : `module.extract_version(source_path)` si le module la définit (cas CSARR), sinon `core.extract_version(source_path, module.RDF_FILENAME_PREFIX)`,
 - calcule `out_path = parquet/<nom>-<version>.parquet`,
-- charge dynamiquement le module et appelle `convert(rdf_path, out_path)`.
+- charge dynamiquement le module et appelle `convert(source_path, out_path)`.
 
 ## Schéma de sortie standard
 
@@ -114,6 +118,7 @@ Le **contenu** est choisi par module (chaque `convert()` passe ses colonnes à
 - **CCAM** : `label`, `synonymes`, `topographie`, `type_acte`, `mode_acces`, `action`.
 - **ADICAP** : `label`, `anatomy_label`.
 - **ATC** : `label`.
+- **CSARR** : `label`.
 
 Hormis le `code` du concept (préfixé, cf. ci-dessus), les autres codes
 (`dictionary_code`, `anatomy_code`) et les notes longues (`inclusion_note`,
@@ -123,13 +128,14 @@ Colonnes spécifiques possibles selon la terminologie :
 - **CCAM** : `topographie`, `type_acte`, `mode_acces`, `action` — labels de concepts liés via `ccam:topographie [ rdfs:label ?x ]` etc.
 - **ADICAP** : `dictionary_code` (`adicap:dictionaryCode`, l'axe D1–D8L), `anatomy_code` + `anatomy_label` (`adicap:anatomy` pointe vers un autre concept ADICAP dont on résout `skos:notation` + `rdfs:label`). Pas de `type` (absence de `dc:type`), ni `synonymes`/`inclusion_note` (absence de `skos:altLabel`/`xkos:*`).
 - **ATC** : `type` = niveau ATC `1`–`5` (`dc:type`) ; `status` = `active`/`inactive` (`adms:status`). Pas de `synonymes` ni de notes (absence de `skos:altLabel`/`xkos:*`). Les nœuds ombrelles (`ATC` + conteneurs « Concept retirés ») ont `type`/`status` nuls.
+- **CSARR** : `type` ∈ `chapitre` (code à 1 segment) / `rubrique` (2–4 segments) / `acte` (feuille `AAA+999`) — dérivé de la structure, pas d'un `dc:type`. `extensions` (`list[str]`) = codes d'extension documentaire par acte (4e colonne Excel, ex. `ZV;ME`), exclus des `keywords`. `inclusion_note` agrège les qualificatifs collés au libellé (« Avec ou sans : … », « À l'exclusion de : … ») et les lignes de note suivantes. Pas de `synonymes`.
 
 Le DataFrame est trié par `lft` (ordre DFS préfixe naturel).
 
 ## Métadonnées Parquet (footer key-value)
 
 - `terminology` — nom court (ex. `cim10`)
-- `version` — `YYYY-MM-DD` extrait du nom de fichier source
+- `version` — extrait du nom de fichier source (souvent `YYYY-MM-DD`, mais `v82.00` pour CCAM, `YYYY` pour CSARR car catalogue annuel)
 - `source_file` — nom du RDF d'origine
 - `source` — libellé de la terminologie (ex. `CIM-10 FR PMSI`)
 - `url` — page SMT de la terminologie
@@ -150,22 +156,23 @@ md[b"version"]  # b"2025-01-01"
 ## Ajouter une nouvelle terminologie
 
 1. Créer `smt2parquet/<nom>.py` exposant :
-   - `BASE_URI` (URI racine, peut être virtuelle),
-   - `RDF_FILENAME_PREFIX` (préfixe du nom de fichier pour `extract_version`),
+   - `BASE_URI` (URI/code racine, peut être virtuelle),
+   - `RDF_FILENAME_PREFIX` (préfixe du nom de fichier pour `extract_version`) — **OU** une fonction `extract_version(source_path)` propre au module (cas non-RDF, cf. CSARR),
    - `TERMINOLOGY_NAME`, `SOURCE`, `SOURCE_URL`, `LICENSE`,
-   - `EDGES_QUERY`, `ATTRS_QUERY` (SPARQL),
-   - `convert(rdf_path, out_path)`.
+   - les requêtes `EDGES_QUERY`/`ATTRS_QUERY` (cas RDF/SPARQL) **ou** la logique de parsing propre (cas Excel),
+   - `convert(source_path, out_path)`.
 2. Ajouter une entrée dans `TERMINOLOGIES` de `smt2parquet/__main__.py` :
    ```python
    "ccam": {
        "module": "smt2parquet.ccam",
-       "rdf_glob": "rdf/terminologie-ccam-*.rdf",
+       "source_glob": "rdf/terminologie-ccam-*.rdf",
        "out_dir": "parquet",
    },
    ```
+   La clé `source_glob` est neutre (RDF ou Excel). Si le module définit `extract_version`, le CLI l'utilise ; sinon il retombe sur `core.extract_version(path, RDF_FILENAME_PREFIX)`.
 3. Lancer `uv run python -m smt2parquet <nom>` et vérifier les invariants nested set.
 
-Aucune modification de `core.py` ne devrait être nécessaire — si c'est le cas pour absorber un cas custom, c'est que le pattern est cassé.
+Aucune modification de `core.py` ne devrait être nécessaire — si c'est le cas pour absorber un cas custom, c'est que le pattern est cassé. (CSARR, source Excel, a été ajouté sans toucher `core.py` : ses briques `build_nested_set`/`keywords_expr`/`write_parquet_with_metadata` ne connaissent ni le RDF ni l'Excel.)
 
 ## Pièges et conventions
 
@@ -178,12 +185,16 @@ Aucune modification de `core.py` ne devrait être nécessaire — si c'est le ca
 - **DAG vs arbre** : le modèle nested set ne supporte qu'une arborescence. Notre choix : *duplication* (un nœud multi-parents apparaît plusieurs fois). CIM10 est un arbre pur sur `rdfs:subClassOf` (0 duplication), mais le mécanisme est en place pour SNOMED / CCAM.
 - **Requêtes SPARQL** : utiliser le `rdfs:subClassOf` direct (pas `*` ni `+`) pour `EDGES_QUERY` — sinon on récupère la fermeture transitive et le DFS est cassé. L'`ATTRS_QUERY` peut faire des `OPTIONAL` pour les champs absents (synonymes, notes…), polars gérera les nulls.
 - **Cartesian product en SPARQL** : si un concept a 2 altLabels et 3 inclusionNotes, l'`ATTRS_QUERY` produit 6 lignes. L'agrégation polars (`drop_nulls().unique()` pour les listes, `.first()` pour les scalaires) doit en tenir compte — attention à ne pas perdre de données avec `.first()` quand plusieurs valeurs distinctes existent.
+- **CSARR : source Excel, hiérarchie reconstruite** : seul l'onglet `CSARR_FINAL` contient les actes feuilles (l'onglet `Sommaire` n'a que l'index des chapitres, on ne l'utilise pas). C'est une liste ordonnée top-down mêlant codes dotés (`^\d{2}(\.\d{2})*$` → hiérarchie), actes (`^[A-Z]{3}\+\d{3}$` → feuilles) et lignes de note (code vide + texte). On reconstruit les arêtes **en Python** (pas de SPARQL) : parent d'un code doté = code privé de son dernier segment (sinon racine virtuelle `CSARR`) ; parent d'un acte = le dernier code doté vu en descendant. La racine `CSARR` est virtuelle (`include_root=False`), donc les 12 chapitres sont à `depth 0`. Les nœuds étant déjà leurs propres codes, `code_of={}` (chaque nœud se code lui-même). Sortie : **659 lignes** (147 nœuds dotés + 512 actes, arbre pur, 0 duplication).
+- **CSARR : libellés multi-lignes** : 137 cellules d'actes empaquettent `<titre>\n\n<qualificatif>` dans la **même** cellule libellé (« Avec ou sans : … », « À l'exclusion de : … »). On `partition("\n")` : 1re ligne → `label`, reste → amorce d'`inclusion_note`. Sans ce découpage le `\n` fuite dans `keywords` (qui ne split que sur l'espace).
+- **CSARR : lecture Excel** : `pl.read_excel(path, sheet_name="CSARR_FINAL", has_header=False)` (la 1re ligne du classeur est du texte d'intro, pas un en-tête) → colonnes nommées par position. Nécessite `fastexcel` (moteur calamine, lit le `.xls`). Lignes ignorées par classification : en-tête `Hiérarchie - Code` + légende des codes d'extension (`ZV`, `ME`, `P3`…) en bas de feuille.
 
 ## Dépendances
 
 - `polars>=1.40.1` — DataFrames + Parquet (lecture).
 - `rdflib>=7.6.0` — parsing RDF + SPARQL.
 - `pyarrow` — écriture Parquet avec métadonnées key-value (`polars.write_parquet` n'expose pas cette API).
+- `fastexcel` — moteur Excel de `pl.read_excel` (CSARR, fichier `.xls`).
 
 Python ≥ 3.13.
 

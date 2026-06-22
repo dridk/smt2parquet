@@ -12,22 +12,30 @@ from smt2parquet import core
 TERMINOLOGIES: dict[str, dict[str, str]] = {
     "cim10": {
         "module": "smt2parquet.cim10",
-        "rdf_glob": "rdf/terminologie-cim-10-*.rdf",
+        "source_glob": "rdf/terminologie-cim-10-*.rdf",
         "out_dir": "parquet",
     },
     "ccam": {
         "module": "smt2parquet.ccam",
-        "rdf_glob": "rdf/terminologie-ccam-*.rdf",
+        "source_glob": "rdf/terminologie-ccam-*.rdf",
         "out_dir": "parquet",
     },
     "adicap": {
         "module": "smt2parquet.adicap",
-        "rdf_glob": "rdf/terminologie-adicap-*.rdf",
+        "source_glob": "rdf/terminologie-adicap-*.rdf",
         "out_dir": "parquet",
     },
     "atc": {
         "module": "smt2parquet.atc",
-        "rdf_glob": "rdf/terminologie-atc-*.rdf",
+        "source_glob": "rdf/terminologie-atc-*.rdf",
+        "out_dir": "parquet",
+    },
+    # CSARR n'est pas dans le SMT : sa source est un fichier Excel ATIH, pas un
+    # RDF. Le module csarr.py définit son propre extract_version (cf. seam plus
+    # bas) et lit le .xls via pl.read_excel.
+    "csarr": {
+        "module": "smt2parquet.csarr",
+        "source_glob": "rdf/csarr_*.xls",
         "out_dir": "parquet",
     },
 }
@@ -45,24 +53,30 @@ def main(argv: list[str] | None = None) -> int:
 
     spec = TERMINOLOGIES[args.terminology]
 
-    rdf_matches = sorted(Path().glob(spec["rdf_glob"]))
-    if not rdf_matches:
-        print(f"No RDF file matching {spec['rdf_glob']!r}", file=sys.stderr)
+    source_matches = sorted(Path().glob(spec["source_glob"]))
+    if not source_matches:
+        print(f"No source file matching {spec['source_glob']!r}", file=sys.stderr)
         return 1
-    if len(rdf_matches) > 1:
+    if len(source_matches) > 1:
         print(
-            f"Multiple RDF files match {spec['rdf_glob']!r}: "
-            f"{[str(p) for p in rdf_matches]}",
+            f"Multiple source files match {spec['source_glob']!r}: "
+            f"{[str(p) for p in source_matches]}",
             file=sys.stderr,
         )
         return 1
-    rdf_path = rdf_matches[0]
+    source_path = source_matches[0]
 
     module = importlib.import_module(spec["module"])
-    version = core.extract_version(rdf_path, module.RDF_FILENAME_PREFIX)
+    # Seam additif : un module non-RDF (CSARR) expose son propre extract_version
+    # (la version n'est pas dérivable par strip-de-préfixe d'un nom de RDF). Les
+    # modules RDF restent inchangés et passent par core.extract_version.
+    if hasattr(module, "extract_version"):
+        version = module.extract_version(source_path)
+    else:
+        version = core.extract_version(source_path, module.RDF_FILENAME_PREFIX)
     out_path = Path(spec["out_dir"]) / f"{args.terminology}-{version}.parquet"
 
-    module.convert(rdf_path, out_path)
+    module.convert(source_path, out_path)
     return 0
 
 
